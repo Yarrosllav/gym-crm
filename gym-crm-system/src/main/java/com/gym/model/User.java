@@ -1,25 +1,36 @@
 package com.gym.model;
 
+import jakarta.persistence.*;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.util.UUID;
-
+@Entity
+@Table(name = "users")
 @Getter
 @Setter
 @ToString(exclude = "password")
-public abstract class User {
+@NoArgsConstructor
+public class User {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id")
+    private Long id;
+
+    @Column(name = "first_name", nullable = false)
     private String firstName;
 
+    @Column(name = "last_name", nullable = false)
     private String lastName;
 
+    @Column(name = "username", nullable = false, unique = true)
     private String username;
 
+    @Column(name = "password", nullable = false)
     private String password;
 
-    private boolean isActive;
-
-    private UUID userId;
+    @Column(name = "is_active", nullable = false)
+    private boolean active;
 }

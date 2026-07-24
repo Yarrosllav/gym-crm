@@ -1,4 +1,0 @@
-TRAINEE,John,Doe,1990-01-15,New York
-TRAINER,Jane,Smith,YOGA
-TRAINEE,Arnold,Schwarzenegger,1980-05-20,Los Angeles
-TRAINER,Jackie,Chan,HIIT

@@ -46,17 +46,20 @@ public abstract class AbstractProfileService<T extends IHasUser, ID extends Seri
     }
 
     @Transactional
-    public void toggleActiveStatus(String username, String password) {
-        log.info("Toggling status for user: {}", username);
+    public void setActive(String username, String password, boolean active) {
+        log.info("Setting active status for {} to {}", username, active);
 
         var profile = authenticate(username, password);
         var user = profile.getUser();
 
-        boolean newStatus = !user.isActive();
-        user.setActive(newStatus);
+        if (user.isActive() == active) {
+            log.warn("{} is already {}", username, active ? "active" : "inactive");
+            throw new ValidationException("Profile is already " + (active ? "active" : "inactive"));
+        }
 
+        user.setActive(active);
         dao.update(profile);
-        log.info("Status for user {} toggled to {}", username, newStatus ? "ACTIVE" : "INACTIVE");
+        log.info("{} active status set to {}", username, active);
     }
 
     @Transactional(readOnly = true)
@@ -65,7 +68,8 @@ public abstract class AbstractProfileService<T extends IHasUser, ID extends Seri
         return authenticate(username, password);
     }
 
-    protected T authenticate(String username, String password) {
+    @Transactional(readOnly = true)
+    public T authenticate(String username, String password) {
         log.debug("Authenticating user: {}", username);
 
         var profile = findByUsername(username)

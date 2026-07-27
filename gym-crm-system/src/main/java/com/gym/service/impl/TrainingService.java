@@ -32,22 +32,22 @@ public class TrainingService extends AbstractService<Training, Long> {
     }
 
     @Transactional
-    public Training addTraining(Long traineeId, Long trainerId, String trainingName,
+    public Training addTraining(String traineeUsername, String trainerUsername, String trainingName,
                                 LocalDate trainingDate, Integer trainingDuration) {
         log.info("Adding Training for Trainee {} with Trainer {} and Training name {}",
-                traineeId, trainerId, trainingName);
+                traineeUsername, trainerUsername, trainingName);
 
         validateTraining(trainingName, trainingDate, trainingDuration);
 
-        var trainee = traineeDao.findById(traineeId)
+        var trainee = traineeDao.findByUsername(traineeUsername)
                 .orElseThrow(() -> {
-                    log.warn("Add training rejected: trainee not found, id={}", traineeId);
-                    return new EntityNotFoundException("Trainee not found: " + traineeId);
+                    log.warn("Add training rejected: trainee not found, username={}", traineeUsername);
+                    return new EntityNotFoundException("Trainee not found: " + traineeUsername);
                 });
-        var trainer = trainerDao.findById(trainerId)
+        var trainer = trainerDao.findByUsername(trainerUsername)
                 .orElseThrow(() -> {
-                    log.warn("Add training rejected: trainer not found, id={}", trainerId);
-                    return new EntityNotFoundException("Trainer not found: " + trainerId);
+                    log.warn("Add training rejected: trainer not found, username={}", trainerUsername);
+                    return new EntityNotFoundException("Trainer not found: " + trainerUsername);
                 });
 
         var training = new Training();
@@ -59,7 +59,7 @@ public class TrainingService extends AbstractService<Training, Long> {
         training.setTrainingDuration(trainingDuration);
 
         create(training);
-        log.info("Added training '{}' for trainee {} with trainer {}", trainingName, traineeId, trainerId);
+        log.info("Added training '{}' for trainee {} with trainer {}", trainingName, traineeUsername, trainerUsername);
         return training;
     }
 

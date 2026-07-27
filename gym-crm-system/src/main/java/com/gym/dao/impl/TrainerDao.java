@@ -30,11 +30,12 @@ public class TrainerDao extends AbstractDao<Trainer, Long> implements ITrainerDa
 
     @Override
     public List<Trainer> findNotAssignedToTrainee(String traineeUsername) {
-        log.debug("Fetching Trainers not assigned to Trainee: {}", traineeUsername);
+        log.debug("Fetching active Trainers not assigned to Trainee: {}", traineeUsername);
         return session()
                 .createQuery("""
                         select tr from Trainer tr
-                        where tr not in (
+                        where tr.user.active = true
+                        and tr not in (
                             select t from Trainee tn join tn.trainers t
                             where tn.user.username = :username
                         )

@@ -2,6 +2,7 @@ package com.gym.service;
 
 import com.gym.dao.IReadOnlyDao;
 import com.gym.dao.ITrainerDao;
+import com.gym.exception.AuthenticationException;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
 import com.gym.model.Trainer;
@@ -84,23 +85,42 @@ class TrainerServiceTest {
     }
 
     @Test
-    void updateProfile_shouldUpdateNameAndSpecialization() {
+    void updateProfileAndStatus_shouldUpdateNameAndKeepSpecializationReadOnly() {
+        var originalSpecialization = new TrainingType(5L, "YOGA");
+        var trainer = buildTrainer("Jane.Doe", "pwd", true);
+        trainer.setSpecialization(originalSpecialization);
+        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
+
+        var result = trainerService.updateProfileAndStatus("Jane.Doe", "pwd",
+                "Janet", "Doey", false);
+
+        assertEquals("Janet", result.getUser().getFirstName());
+        assertEquals("Doey", result.getUser().getLastName());
+        assertEquals(originalSpecialization, result.getSpecialization());
+        assertFalse(result.getUser().isActive());
+        verify(trainerDao).update(trainer);
+    }
+
+    @Test
+    void updateProfileAndStatus_shouldThrow_whenNameMissing() {
         var trainer = buildTrainer("Jane.Doe", "pwd", true);
         when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
 
-        var newSpecialization = new TrainingType();
-        var updated = new Trainer();
-        var updatedUser = new User();
-        updatedUser.setFirstName("Janet");
-        updatedUser.setLastName("Doey");
-        updated.setUser(updatedUser);
-        updated.setSpecialization(newSpecialization);
+        assertThrows(ValidationException.class,
+                () -> trainerService.updateProfileAndStatus("Jane.Doe", "pwd", " ",
+                        "Doey", true));
+        verify(trainerDao, never()).update(any());
+    }
 
-        var result = trainerService.updateProfile("Jane.Doe", "pwd", updated);
+    @Test
+    void updateProfileAndStatus_shouldThrow_whenPasswordWrong() {
+        var trainer = buildTrainer("Jane.Doe", "pwd", true);
+        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
 
-        assertEquals("Janet", result.getUser().getFirstName());
-        assertEquals(newSpecialization, result.getSpecialization());
-        verify(trainerDao).update(trainer);
+        assertThrows(AuthenticationException.class,
+                () -> trainerService.updateProfileAndStatus("Jane.Doe", "wrong", "Janet",
+                        "Doey", true));
+        verify(trainerDao, never()).update(any());
     }
 
     @Test
@@ -116,9 +136,18 @@ class TrainerServiceTest {
         var trainer = buildTrainer("Jane.Doe", "pwd", true);
         when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
 
-        trainerService.toggleActiveStatus("Jane.Doe", "pwd");
+        trainerService.setActive("Jane.Doe", "pwd", false);
 
         assertFalse(trainer.getUser().isActive());
+    }
+
+    @Test
+    void setActive_shouldThrow_whenCurrentlyActive() {
+        var trainer = buildTrainer("John.Smith", "pwd", true);
+        when(trainerDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainer));
+
+        assertThrows(ValidationException.class, () -> trainerService.setActive("John.Smith", "pwd", true));
+        verify(trainerDao, never()).update(trainer);
     }
 
     @Test

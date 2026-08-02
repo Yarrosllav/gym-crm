@@ -50,6 +50,20 @@ class TraineeServiceTest {
         return trainee;
     }
 
+    private Trainer buildTrainer(String username, String password, boolean active) {
+        var user = new User();
+        user.setFirstName("Mike");
+        user.setLastName("Jones");
+        user.setUsername(username);
+        user.setPassword(password);
+        user.setActive(active);
+
+        var trainer = new Trainer();
+        trainer.setId(2L);
+        trainer.setUser(user);
+        return trainer;
+    }
+
     @Test
     void createProfile_shouldPersistTraineeWithGeneratedCredentials() {
         when(usernameGenerator.generate("John", "Smith")).thenReturn("John.Smith");
@@ -71,6 +85,47 @@ class TraineeServiceTest {
         assertThrows(ValidationException.class,
                 () -> traineeService.createProfile(" ", "Smith", null, null));
         verifyNoInteractions(traineeDao);
+    }
+
+    @Test
+    void updateProfileAndStatus_shouldUpdateFieldsAndActiveStatus() {
+        var trainee = buildTrainee("John.Smith", "pwd", true);
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+
+        var result = traineeService.updateProfileAndStatus("John.Smith", "pwd",
+                "Johnny", "Smithy", LocalDate.of(1995, 5, 5),
+                "New Address", false);
+
+        assertEquals("Johnny", result.getUser().getFirstName());
+        assertEquals("Smithy", result.getUser().getLastName());
+        assertEquals(LocalDate.of(1995, 5, 5), result.getDateOfBirth());
+        assertEquals("New Address", result.getAddress());
+        assertFalse(result.getUser().isActive());
+        verify(traineeDao).update(trainee);
+    }
+
+    @Test
+    void updateProfileAndStatus_shouldThrow_whenFirstNameMissing() {
+        var trainee = buildTrainee("John.Smith", "pwd", true);
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+
+        assertThrows(ValidationException.class,
+                () -> traineeService.updateProfileAndStatus("John.Smith", "pwd",
+                        " ", "Smithy", LocalDate.of(1995, 5, 5),
+                        "New Address", true));
+        verify(traineeDao, never()).update(any());
+    }
+
+    @Test
+    void updateProfileAndStatus_shouldThrow_whenPasswordWrong() {
+        var trainee = buildTrainee("John.Smith", "pwd", true);
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+
+        assertThrows(AuthenticationException.class,
+                () -> traineeService.updateProfileAndStatus("John.Smith", "wrong",
+                        "Johnny", "Smithy", LocalDate.of(1995, 5, 5),
+                        "New Address", true));
+        verify(traineeDao, never()).update(any());
     }
 
     @Test
@@ -143,11 +198,11 @@ class TraineeServiceTest {
     }
 
     @Test
-    void toggleActive_shouldActivate_whenCurrentlyInactive() {
+    void setActive_shouldActivate_whenCurrentlyInactive() {
         var trainee = buildTrainee("John.Smith", "pwd", false);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
-        traineeService.toggleActiveStatus("John.Smith", "pwd");
+        traineeService.setActive("John.Smith", "pwd", true);
 
         assertTrue(trainee.getUser().isActive());
         verify(traineeDao).update(trainee);
@@ -158,10 +213,19 @@ class TraineeServiceTest {
         var trainee = buildTrainee("John.Smith", "pwd", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
-        traineeService.toggleActiveStatus("John.Smith", "pwd");
+        traineeService.setActive("John.Smith", "pwd", false);
 
         assertFalse(trainee.getUser().isActive());
         verify(traineeDao).update(trainee);
+    }
+
+    @Test
+    void setActive_shouldThrow_whenCurrentlyActive() {
+        var trainee = buildTrainee("John.Smith", "pwd", true);
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+
+        assertThrows(ValidationException.class, () -> traineeService.setActive("John.Smith", "pwd", true));
+        verify(traineeDao, never()).update(trainee);
     }
 
     @Test
@@ -184,12 +248,11 @@ class TraineeServiceTest {
     @Test
     void updateTrainersList_shouldReplaceTrainers_whenAuthenticated() {
         var trainee = buildTrainee("John.Smith", "pwd", true);
-        var trainer = new Trainer();
-        trainer.setId(2L);
+        var trainer = buildTrainer("Mike.Jones", "pwd", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-        when(trainerDao.findById(2L)).thenReturn(Optional.of(trainer));
+        when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.of(trainer));
 
-        var result = traineeService.updateTrainersList("John.Smith", "pwd", List.of(2L));
+        var result = traineeService.updateTrainersList("John.Smith", "pwd", List.of("Mike.Jones"));
 
         assertEquals(Set.of(trainer), result);
         assertEquals(Set.of(trainer), trainee.getTrainers());
@@ -200,10 +263,10 @@ class TraineeServiceTest {
     void updateTrainersList_shouldThrow_whenTrainerNotFound() {
         var trainee = buildTrainee("John.Smith", "pwd", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-        when(trainerDao.findById(99L)).thenReturn(Optional.empty());
+        when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class,
-                () -> traineeService.updateTrainersList("John.Smith", "pwd", List.of(99L)));
+                () -> traineeService.updateTrainersList("John.Smith", "pwd", List.of("Mike.Jones")));
     }
 
     @Test

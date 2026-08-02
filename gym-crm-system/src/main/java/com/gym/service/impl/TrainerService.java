@@ -70,21 +70,18 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
     }
 
     @Transactional
-    public Trainer updateProfile(String username, String password, Trainer updated) {
-        log.info("Updating Trainer profile with username: {}", username);
-
+    public Trainer updateProfileAndStatus(String username, String password, String firstName,
+                                          String lastName, boolean active) {
         var trainer = authenticate(username, password);
-        var updatedUser = updated.getUser();
 
-        if (updatedUser.getFirstName() == null || updatedUser.getFirstName().isBlank()
-                || updatedUser.getLastName() == null || updatedUser.getLastName().isBlank()) {
-            log.warn("Update Trainer profile rejected: first/last name missing");
+        if (firstName == null || firstName.isBlank() || lastName == null || lastName.isBlank()) {
+            log.warn("Update Trainer profile rejected: first/last name missing, username={}", username);
             throw new ValidationException("First name and last name are required");
         }
 
-        trainer.getUser().setFirstName(updatedUser.getFirstName());
-        trainer.getUser().setLastName(updatedUser.getLastName());
-        trainer.setSpecialization(updated.getSpecialization());
+        trainer.getUser().setFirstName(firstName);
+        trainer.getUser().setLastName(lastName);
+        trainer.getUser().setActive(active);
 
         update(trainer);
         log.info("Updated Trainer profile: {}", username);

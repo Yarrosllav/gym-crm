@@ -8,6 +8,7 @@ import com.gym.exception.ValidationException;
 import com.gym.model.Trainee;
 import com.gym.model.Trainer;
 import com.gym.model.TrainingType;
+import com.gym.model.User;
 import com.gym.service.impl.TrainingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,19 +36,45 @@ class TrainingServiceTest {
     @InjectMocks
     private TrainingService trainingService;
 
-    @Test
-    void addTraining_shouldCreateTraining_whenTraineeAndTrainerExist() {
+    private Trainee buildTrainee(String username, String password, boolean active) {
+        var user = new User();
+        user.setFirstName("John");
+        user.setLastName("Smith");
+        user.setUsername(username);
+        user.setPassword(password);
+        user.setActive(active);
+
         var trainee = new Trainee();
         trainee.setId(1L);
+        trainee.setUser(user);
+        return trainee;
+    }
+
+    private Trainer buildTrainer(String username, String password, boolean active) {
+        var user = new User();
+        user.setFirstName("Mike");
+        user.setLastName("Jones");
+        user.setUsername(username);
+        user.setPassword(password);
+        user.setActive(active);
+
         var trainer = new Trainer();
         trainer.setId(2L);
+        trainer.setUser(user);
+        return trainer;
+    }
+
+    @Test
+    void addTraining_shouldCreateTraining_whenTraineeAndTrainerExist() {
+        var trainee = buildTrainee("John.Smith", "pwd", true);
+        var trainer = buildTrainer("Mike.Jones", "pwd", true);
         var specialization = new TrainingType();
         trainer.setSpecialization(specialization);
 
-        when(traineeDao.findById(1L)).thenReturn(Optional.of(trainee));
-        when(trainerDao.findById(2L)).thenReturn(Optional.of(trainer));
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.of(trainer));
 
-        var result = trainingService.addTraining(1L, 2L, "Morning Run", LocalDate.of(2026, 6, 1), 60);
+        var result = trainingService.addTraining("John.Smith", "Mike.Jones", "Morning Run", LocalDate.of(2026, 6, 1), 60);
 
         assertEquals(trainee, result.getTrainee());
         assertEquals(trainer, result.getTrainer());
@@ -57,35 +84,35 @@ class TrainingServiceTest {
 
     @Test
     void addTraining_shouldThrow_whenTraineeNotFound() {
-        when(traineeDao.findById(1L)).thenReturn(Optional.empty());
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class,
-                () -> trainingService.addTraining(1L, 2L, "Run", LocalDate.now(), 60));
+                () -> trainingService.addTraining("John.Smith", "Mike.Jones", "Run", LocalDate.now(), 60));
         verifyNoInteractions(trainingDao);
     }
 
     @Test
     void addTraining_shouldThrow_whenTrainerNotFound() {
-        when(traineeDao.findById(1L)).thenReturn(Optional.of(new Trainee()));
-        when(trainerDao.findById(2L)).thenReturn(Optional.empty());
+        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(new Trainee()));
+        when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class,
-                () -> trainingService.addTraining(1L, 2L, "Run", LocalDate.now(), 60));
+                () -> trainingService.addTraining("John.Smith", "Mike.Jones", "Run", LocalDate.now(), 60));
     }
 
     @Test
     void addTraining_shouldThrow_whenNameBlank() {
         assertThrows(ValidationException.class,
-                () -> trainingService.addTraining(1L, 2L, " ", LocalDate.now(), 60));
+                () -> trainingService.addTraining("John.Smith", "Mike.Jones", " ", LocalDate.now(), 60));
         verifyNoInteractions(traineeDao, trainerDao, trainingDao);
     }
 
     @Test
     void addTraining_shouldThrow_whenDateOrDurationMissing() {
         assertThrows(ValidationException.class,
-                () -> trainingService.addTraining(1L, 2L, "Run", null, 60));
+                () -> trainingService.addTraining("John.Smith", "Mike.Jones", "Run", null, 60));
         assertThrows(ValidationException.class,
-                () -> trainingService.addTraining(1L, 2L, "Run", LocalDate.now(), null));
+                () -> trainingService.addTraining("John.Smith", "Mike.Jones", "Run", LocalDate.now(), null));
     }
 
     @Test

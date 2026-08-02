@@ -71,22 +71,20 @@ public class TraineeService extends AbstractProfileService<Trainee, Long> {
     }
 
     @Transactional
-    public Trainee updateProfile(String username, String password, Trainee updated) {
-        log.info("Updating Trainee profile with username: {}", username);
-
+    public Trainee updateProfileAndStatus(String username, String password, String firstName, String lastName,
+                                          LocalDate dateOfBirth, String address, boolean active) {
         var trainee = authenticate(username, password);
-        var updatedUser = updated.getUser();
 
-        if (updatedUser.getFirstName() == null || updatedUser.getFirstName().isBlank()
-                || updatedUser.getLastName() == null || updatedUser.getLastName().isBlank()) {
-            log.warn("Update Trainee profile rejected: first/last name missing");
+        if (firstName == null || firstName.isBlank() || lastName == null || lastName.isBlank()) {
+            log.warn("Update Trainee profile rejected: first/last name missing, username={}", username);
             throw new ValidationException("First name and last name are required");
         }
 
-        trainee.getUser().setFirstName(updatedUser.getFirstName());
-        trainee.getUser().setLastName(updatedUser.getLastName());
-        trainee.setDateOfBirth(updated.getDateOfBirth());
-        trainee.setAddress(updated.getAddress());
+        trainee.getUser().setFirstName(firstName);
+        trainee.getUser().setLastName(lastName);
+        trainee.setDateOfBirth(dateOfBirth);
+        trainee.setAddress(address);
+        trainee.getUser().setActive(active);
 
         update(trainee);
         log.info("Updated Trainee profile: {}", username);
@@ -104,15 +102,15 @@ public class TraineeService extends AbstractProfileService<Trainee, Long> {
 
 
     @Transactional
-    public Set<Trainer> updateTrainersList(String username, String password, List<Long> trainerIds) {
+    public Set<Trainer> updateTrainersList(String username, String password, List<String> trainerUsernames) {
         log.info("Updating trainers list for Trainee: {}", username);
 
         var trainee = authenticate(username, password);
-        var trainers = trainerIds.stream()
-                .map(id -> trainerDao.findById(id)
+        var trainers = trainerUsernames.stream()
+                .map(trainerUsername -> trainerDao.findByUsername(trainerUsername)
                         .orElseThrow(() -> {
-                            log.warn("Update trainers list rejected: trainer not found, id={}", id);
-                            return new EntityNotFoundException("Trainer not found: " + id);
+                            log.warn("Update trainers list rejected: trainer not found, username={}", trainerUsername);
+                            return new EntityNotFoundException("Trainer not found: " + trainerUsername);
                         }))
                 .collect(Collectors.toSet());
         trainee.setTrainers(trainers);

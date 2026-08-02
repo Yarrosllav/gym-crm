@@ -1,6 +1,7 @@
 package com.gym.service.impl;
 
 import com.gym.exception.AuthenticationException;
+import com.gym.metrics.GymMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,14 +15,18 @@ public class AccountService {
 
     private final TrainerService trainerService;
 
+    private final GymMetrics gymMetrics;
+
     public void login(String username, String password) {
         log.info("Logging in: {}", username);
         var isMatching = traineeService.matchCredentials(username, password)
                 || trainerService.matchCredentials(username, password);
         if (!isMatching) {
+            gymMetrics.incrementLoginFailure();
             log.warn("Login failed for '{}'", username);
             throw new AuthenticationException("Invalid username or password");
         }
+        gymMetrics.incrementLoginSuccess();
         log.info("Login successful for '{}'", username);
     }
 

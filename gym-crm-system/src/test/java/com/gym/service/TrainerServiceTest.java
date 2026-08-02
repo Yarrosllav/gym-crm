@@ -5,6 +5,7 @@ import com.gym.dao.ITrainerDao;
 import com.gym.exception.AuthenticationException;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.metrics.GymMetrics;
 import com.gym.model.Trainer;
 import com.gym.model.TrainingType;
 import com.gym.model.User;
@@ -30,12 +31,14 @@ class TrainerServiceTest {
     private IReadOnlyDao<TrainingType, Long> trainingTypeDao;
     @Mock
     private UsernameGenerator usernameGenerator;
+    @Mock
+    private GymMetrics gymMetrics;
 
     private TrainerService trainerService;
 
     @BeforeEach
     void setUp() {
-        trainerService = new TrainerService(trainerDao, trainingTypeDao, usernameGenerator);
+        trainerService = new TrainerService(trainerDao, trainingTypeDao, usernameGenerator, gymMetrics);
     }
 
     private Trainer buildTrainer(String username, String password, boolean active) {
@@ -67,6 +70,7 @@ class TrainerServiceTest {
         assertNotNull(result.getUser().getPassword());
         assertEquals(10, result.getUser().getPassword().length());
 
+        verify(gymMetrics).incrementTrainerRegistrations();
         verify(trainerDao).create(result);
     }
 
@@ -76,12 +80,14 @@ class TrainerServiceTest {
 
         assertThrows(EntityNotFoundException.class, () -> trainerService.createProfile("Jane", "Doe", 99L));
         verifyNoInteractions(trainerDao);
+        verifyNoInteractions(gymMetrics);
     }
 
     @Test
     void createProfile_shouldThrow_whenNameMissing() {
         assertThrows(ValidationException.class, () -> trainerService.createProfile("", "Doe", 5L));
         verifyNoInteractions(trainingTypeDao);
+        verifyNoInteractions(gymMetrics);
     }
 
     @Test

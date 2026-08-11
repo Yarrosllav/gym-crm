@@ -2,10 +2,10 @@ package com.gym.service;
 
 import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
-import com.gym.exception.AuthenticationException;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
 import com.gym.metrics.GymMetrics;
+import com.gym.model.Role;
 import com.gym.model.Trainee;
 import com.gym.model.Trainer;
 import com.gym.model.User;
@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -34,18 +35,20 @@ class TraineeServiceTest {
     @Mock
     private UsernameGenerator usernameGenerator;
     @Mock
+    private PasswordEncoder passwordEncoder;
+    @Mock
     private GymMetrics gymMetrics;
 
     @InjectMocks
     private TraineeService traineeService;
 
-    private Trainee buildTrainee(String username, String password, boolean active) {
+    private Trainee buildTrainee(String username, boolean active) {
         var user = new User();
         user.setFirstName("John");
         user.setLastName("Smith");
         user.setUsername(username);
-        user.setPassword(password);
         user.setActive(active);
+        user.setRole(Role.ROLE_TRAINEE);
 
         var trainee = new Trainee();
         trainee.setId(1L);
@@ -53,13 +56,13 @@ class TraineeServiceTest {
         return trainee;
     }
 
-    private Trainer buildTrainer(String username, String password, boolean active) {
+    private Trainer buildTrainer(String username, boolean active) {
         var user = new User();
         user.setFirstName("Mike");
         user.setLastName("Jones");
         user.setUsername(username);
-        user.setPassword(password);
         user.setActive(active);
+        user.setRole(Role.ROLE_TRAINER);
 
         var trainer = new Trainer();
         trainer.setId(2L);
@@ -68,20 +71,19 @@ class TraineeServiceTest {
     }
 
     @Test
-    void createProfile_shouldPersistTraineeWithGeneratedCredentials() {
+    void createProfile_shouldEncodePasswordAndReturnRawInResult() {
         when(usernameGenerator.generate("John", "Smith")).thenReturn("John.Smith");
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$encoded");
 
         var result = traineeService.createProfile("John", "Smith",
                 LocalDate.of(2000, 1, 1), "Main St");
 
-        assertEquals("John.Smith", result.getUser().getUsername());
-        assertTrue(result.getUser().isActive());
-
-        assertNotNull(result.getUser().getPassword());
-        assertEquals(10, result.getUser().getPassword().length());
-
+        assertEquals(10, result.originalPassword().length());
+        assertEquals("$2a$10$encoded", result.trainee().getUser().getPassword());
+        assertEquals(Role.ROLE_TRAINEE, result.trainee().getUser().getRole());
+        verify(passwordEncoder).encode(result.originalPassword());
+        verify(traineeDao).create(result.trainee());
         verify(gymMetrics).incrementTraineeRegistrations();
-        verify(traineeDao).create(result);
     }
 
     @Test
@@ -94,11 +96,11 @@ class TraineeServiceTest {
 
     @Test
     void updateProfileAndStatus_shouldUpdateFieldsAndActiveStatus() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        var trainee = buildTrainee("John.Smith", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
 
-        var result = traineeService.updateProfileAndStatus("John.Smith", "pwd",
-                "Johnny", "Smithy", LocalDate.of(1995, 5, 5),
+        var result = traineeService.updateProfileAndStatus("John.Smith", "Johnny",
+                "Smithy", LocalDate.of(1995, 5, 5),
                 "New Address", false);
 
         assertEquals("Johnny", result.getUser().getFirstName());
@@ -111,103 +113,55 @@ class TraineeServiceTest {
 
     @Test
     void updateProfileAndStatus_shouldThrow_whenFirstNameMissing() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        var trainee = buildTrainee("John.Smith", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
 
         assertThrows(ValidationException.class,
-                () -> traineeService.updateProfileAndStatus("John.Smith", "pwd",
-                        " ", "Smithy", LocalDate.of(1995, 5, 5),
-                        "New Address", true));
+                () -> traineeService.updateProfileAndStatus("John.Smith", " ", "Smithy",
+                        LocalDate.of(1995, 5, 5), "New Address", true));
         verify(traineeDao, never()).update(any());
     }
 
     @Test
-    void updateProfileAndStatus_shouldThrow_whenPasswordWrong() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+    void getProfile_shouldReturnProfile_whenFound() {
+        var trainee = buildTrainee("John.Smith", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
 
-        assertThrows(AuthenticationException.class,
-                () -> traineeService.updateProfileAndStatus("John.Smith", "wrong",
-                        "Johnny", "Smithy", LocalDate.of(1995, 5, 5),
-                        "New Address", true));
-        verify(traineeDao, never()).update(any());
+        assertEquals(trainee, traineeService.getProfile("John.Smith"));
     }
 
     @Test
-    void matchCredentials_shouldReturnTrue_whenPasswordMatches() {
-        var trainee = buildTrainee("John.Smith", "secret", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+    void getProfile_shouldThrow_whenNotFound() {
+        when(traineeDao.findByUsernameWithProfile("Unknown")).thenReturn(Optional.empty());
 
-        assertTrue(traineeService.matchCredentials("John.Smith", "secret"));
+        assertThrows(EntityNotFoundException.class, () -> traineeService.getProfile("Unknown"));
     }
 
     @Test
-    void matchCredentials_shouldReturnFalse_whenPasswordDoesNotMatch() {
-        var trainee = buildTrainee("John.Smith", "secret", true);
+    void changePassword_shouldEncodeNewPassword() {
+        var trainee = buildTrainee("John.Smith", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        when(passwordEncoder.encode("newPwd1234")).thenReturn("$2a$10$newEncoded");
 
-        assertFalse(traineeService.matchCredentials("John.Smith", "wrong"));
-    }
+        traineeService.changePassword("John.Smith", "newPwd1234");
 
-    @Test
-    void matchCredentials_shouldReturnFalse_whenUserNotFound() {
-        when(traineeDao.findByUsername("unknown")).thenReturn(Optional.empty());
-
-        assertFalse(traineeService.matchCredentials("unknown", "any"));
-    }
-
-    @Test
-    void getProfile_shouldReturnProfile_whenAuthenticated() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-
-        assertEquals(trainee, traineeService.getProfile("John.Smith", "pwd"));
-    }
-
-    @Test
-    void getProfile_shouldThrow_whenPasswordWrong() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-
-        assertThrows(AuthenticationException.class, () -> traineeService.getProfile("John.Smith", "wrong"));
-    }
-
-    @Test
-    void changePassword_shouldUpdatePassword_whenAuthenticated() {
-        var trainee = buildTrainee("John.Smith", "old", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-
-        traineeService.changePassword("John.Smith", "old", "newPassword1");
-
-        assertEquals("newPassword1", trainee.getUser().getPassword());
+        assertEquals("$2a$10$newEncoded", trainee.getUser().getPassword());
         verify(traineeDao).update(trainee);
     }
 
     @Test
-    void changePassword_shouldThrow_whenOldPasswordWrong() {
-        var trainee = buildTrainee("John.Smith", "old", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
-
-        assertThrows(AuthenticationException.class,
-                () -> traineeService.changePassword("John.Smith", "wrong", "newPassword1"));
-        verify(traineeDao, never()).update(any());
-    }
-
-    @Test
     void changePassword_shouldThrow_whenNewPasswordBlank() {
-        var trainee = buildTrainee("John.Smith", "old", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
         assertThrows(ValidationException.class,
-                () -> traineeService.changePassword("John.Smith", "old", " "));
+                () -> traineeService.changePassword("John.Smith", " "));
     }
 
     @Test
     void setActive_shouldActivate_whenCurrentlyInactive() {
-        var trainee = buildTrainee("John.Smith", "pwd", false);
+        var trainee = buildTrainee("John.Smith", false);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
-        traineeService.setActive("John.Smith", "pwd", true);
+        traineeService.setActive("John.Smith", true);
 
         assertTrue(trainee.getUser().isActive());
         verify(traineeDao).update(trainee);
@@ -215,10 +169,10 @@ class TraineeServiceTest {
 
     @Test
     void setActive_shouldDeactivate_whenCurrentlyActive() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
+        var trainee = buildTrainee("John.Smith", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
-        traineeService.setActive("John.Smith", "pwd", false);
+        traineeService.setActive("John.Smith", false);
 
         assertFalse(trainee.getUser().isActive());
         verify(traineeDao).update(trainee);
@@ -226,38 +180,38 @@ class TraineeServiceTest {
 
     @Test
     void setActive_shouldThrow_whenCurrentlyActive() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
+        var trainee = buildTrainee("John.Smith", true);
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
 
-        assertThrows(ValidationException.class, () -> traineeService.setActive("John.Smith", "pwd", true));
+        assertThrows(ValidationException.class, () -> traineeService.setActive("John.Smith", true));
         verify(traineeDao, never()).update(trainee);
     }
 
     @Test
     void deleteByUsername_shouldDeleteTrainee_whenAuthenticated() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        var trainee = buildTrainee("John.Smith", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
 
-        traineeService.deleteByUsername("John.Smith", "pwd");
+        traineeService.deleteByUsername("John.Smith");
 
         verify(traineeDao).delete(trainee);
     }
 
     @Test
     void deleteByUsername_shouldThrow_whenProfileNotFound() {
-        when(traineeDao.findByUsername("unknown")).thenReturn(Optional.empty());
+        when(traineeDao.findByUsernameWithProfile("unknown")).thenReturn(Optional.empty());
 
-        assertThrows(AuthenticationException.class, () -> traineeService.deleteByUsername("unknown", "pwd"));
+        assertThrows(EntityNotFoundException.class, () -> traineeService.deleteByUsername("unknown"));
     }
 
     @Test
     void updateTrainersList_shouldReplaceTrainers_whenAuthenticated() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        var trainer = buildTrainer("Mike.Jones", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        var trainee = buildTrainee("John.Smith", true);
+        var trainer = buildTrainer("Mike.Jones", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
         when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.of(trainer));
 
-        var result = traineeService.updateTrainersList("John.Smith", "pwd", List.of("Mike.Jones"));
+        var result = traineeService.updateTrainersList("John.Smith", List.of("Mike.Jones"));
 
         assertEquals(Set.of(trainer), result);
         assertEquals(Set.of(trainer), trainee.getTrainers());
@@ -266,17 +220,17 @@ class TraineeServiceTest {
 
     @Test
     void updateTrainersList_shouldThrow_whenTrainerNotFound() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
-        when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainee));
+        var trainee = buildTrainee("John.Smith", true);
+        when(traineeDao.findByUsernameWithProfile("John.Smith")).thenReturn(Optional.of(trainee));
         when(trainerDao.findByUsername("Mike.Jones")).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class,
-                () -> traineeService.updateTrainersList("John.Smith", "pwd", List.of("Mike.Jones")));
+                () -> traineeService.updateTrainersList("John.Smith", List.of("Mike.Jones")));
     }
 
     @Test
     void findById_shouldDelegateToDao() {
-        var trainee = buildTrainee("John.Smith", "pwd", true);
+        var trainee = buildTrainee("John.Smith", true);
         when(traineeDao.findById(1L)).thenReturn(Optional.of(trainee));
 
         assertTrue(traineeService.findById(1L).isPresent());
@@ -284,7 +238,7 @@ class TraineeServiceTest {
 
     @Test
     void findAll_shouldDelegateToDao() {
-        when(traineeDao.findAll()).thenReturn(List.of(buildTrainee("John.Smith", "pwd", true)));
+        when(traineeDao.findAll()).thenReturn(List.of(buildTrainee("John.Smith", true)));
 
         assertEquals(1, traineeService.findAll().size());
     }

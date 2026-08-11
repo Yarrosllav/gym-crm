@@ -1,4 +1,4 @@
 package com.gym.dto.response;
 
-public record RegistrationResponse(String username, String password) {
+public record RegistrationResponse(String username, String password, String token) {
 }

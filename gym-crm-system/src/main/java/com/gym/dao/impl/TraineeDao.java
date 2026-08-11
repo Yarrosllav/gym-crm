@@ -25,4 +25,20 @@ public class TraineeDao extends AbstractDao<Trainee, Long> implements ITraineeDa
                 .setParameter("username", username)
                 .uniqueResultOptional();
     }
+
+    @Override
+    public Optional<Trainee> findByUsernameWithProfile(String username) {
+        log.debug("Fetching Trainee with profile graph by username: {}", username);
+        return session()
+                .createQuery("""
+                        select distinct t from Trainee t
+                        left join fetch t.user
+                        left join fetch t.trainers tr
+                        left join fetch tr.user
+                        left join fetch tr.specialization
+                        where t.user.username = :username
+                        """, Trainee.class)
+                .setParameter("username", username)
+                .uniqueResultOptional();
+    }
 }

@@ -4,6 +4,7 @@ import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.metrics.GymMetrics;
 import com.gym.model.Trainee;
 import com.gym.model.Trainer;
 import com.gym.model.User;
@@ -30,12 +31,15 @@ public class TraineeService extends AbstractProfileService<Trainee, Long> {
 
     private final UsernameGenerator usernameGenerator;
 
+    private final GymMetrics gymMetrics;
+
     public TraineeService(ITraineeDao traineeDao, ITrainerDao trainerDao,
-                          UsernameGenerator usernameGenerator) {
+                          UsernameGenerator usernameGenerator, GymMetrics gymMetrics) {
         super(traineeDao);
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.usernameGenerator = usernameGenerator;
+        this.gymMetrics = gymMetrics;
     }
 
     @Override
@@ -66,6 +70,7 @@ public class TraineeService extends AbstractProfileService<Trainee, Long> {
         trainee.setAddress(address);
 
         create(trainee);
+        gymMetrics.incrementTraineeRegistrations();
         log.info("Created Trainee profile with username: {}", user.getUsername());
         return trainee;
     }

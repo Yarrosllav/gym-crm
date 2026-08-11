@@ -5,6 +5,7 @@ import com.gym.dao.ITrainerDao;
 import com.gym.exception.AuthenticationException;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.metrics.GymMetrics;
 import com.gym.model.Trainee;
 import com.gym.model.Trainer;
 import com.gym.model.User;
@@ -32,6 +33,8 @@ class TraineeServiceTest {
     private ITrainerDao trainerDao;
     @Mock
     private UsernameGenerator usernameGenerator;
+    @Mock
+    private GymMetrics gymMetrics;
 
     @InjectMocks
     private TraineeService traineeService;
@@ -77,6 +80,7 @@ class TraineeServiceTest {
         assertNotNull(result.getUser().getPassword());
         assertEquals(10, result.getUser().getPassword().length());
 
+        verify(gymMetrics).incrementTraineeRegistrations();
         verify(traineeDao).create(result);
     }
 
@@ -85,6 +89,7 @@ class TraineeServiceTest {
         assertThrows(ValidationException.class,
                 () -> traineeService.createProfile(" ", "Smith", null, null));
         verifyNoInteractions(traineeDao);
+        verifyNoInteractions(gymMetrics);
     }
 
     @Test

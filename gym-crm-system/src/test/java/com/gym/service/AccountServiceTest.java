@@ -1,6 +1,7 @@
 package com.gym.service;
 
 import com.gym.exception.AuthenticationException;
+import com.gym.metrics.GymMetrics;
 import com.gym.service.impl.AccountService;
 import com.gym.service.impl.TraineeService;
 import com.gym.service.impl.TrainerService;
@@ -21,6 +22,8 @@ class AccountServiceTest {
     private TraineeService traineeService;
     @Mock
     private TrainerService trainerService;
+    @Mock
+    private GymMetrics gymMetrics;
 
     @InjectMocks
     private AccountService accountService;
@@ -31,6 +34,7 @@ class AccountServiceTest {
 
         accountService.login("John.Smith", "pwd");
 
+        verify(gymMetrics).incrementLoginSuccess();
         verify(trainerService, never()).matchCredentials(any(), any());
     }
 
@@ -40,6 +44,7 @@ class AccountServiceTest {
         when(trainerService.matchCredentials("Jane.Doe", "pwd")).thenReturn(true);
 
         accountService.login("Jane.Doe", "pwd");
+        verify(gymMetrics).incrementLoginSuccess();
     }
 
     @Test
@@ -48,6 +53,7 @@ class AccountServiceTest {
         when(trainerService.matchCredentials("unknown", "pwd")).thenReturn(false);
 
         assertThrows(AuthenticationException.class, () -> accountService.login("unknown", "pwd"));
+        verify(gymMetrics).incrementLoginFailure();
     }
 
     @Test

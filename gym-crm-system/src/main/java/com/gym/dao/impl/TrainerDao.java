@@ -29,11 +29,29 @@ public class TrainerDao extends AbstractDao<Trainer, Long> implements ITrainerDa
     }
 
     @Override
+    public Optional<Trainer> findByUsernameWithProfile(String username) {
+        log.debug("Fetching Trainer with profile graph by username: {}", username);
+        return session()
+                .createQuery("""
+                        select distinct t from Trainer t
+                        left join fetch t.user
+                        left join fetch t.specialization
+                        left join fetch t.trainees tn
+                        left join fetch tn.user
+                        where t.user.username = :username
+                        """, Trainer.class)
+                .setParameter("username", username)
+                .uniqueResultOptional();
+    }
+
+    @Override
     public List<Trainer> findNotAssignedToTrainee(String traineeUsername) {
         log.debug("Fetching active Trainers not assigned to Trainee: {}", traineeUsername);
         return session()
                 .createQuery("""
-                        select tr from Trainer tr
+                        select distinct tr from Trainer tr
+                        left join fetch tr.user
+                        left join fetch tr.specialization
                         where tr.user.active = true
                         and tr not in (
                             select t from Trainee tn join tn.trainers t

@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.hibernate.SessionFactory;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Slf4j
 @Repository
 public class UserDao extends AbstractDao<User, Long> implements IUserDao {
@@ -27,5 +29,14 @@ public class UserDao extends AbstractDao<User, Long> implements IUserDao {
 
         log.debug("Username '{}' exists: {}", username, exists != null && exists);
         return exists != null && exists;
+    }
+
+    @Override
+    public Optional<User> findByUsername(String username) {
+        log.debug("Fetching User by username: {}", username);
+        return session()
+                .createQuery("from User u where u.username = :username", User.class)
+                .setParameter("username", username)
+                .uniqueResultOptional();
     }
 }

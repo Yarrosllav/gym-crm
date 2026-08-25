@@ -1,10 +1,11 @@
 package com.gym.service;
 
 import com.gym.dao.IProfileDao;
-import com.gym.exception.AuthenticationException;
+import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
 import com.gym.model.IHasUser;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
@@ -14,42 +15,39 @@ import java.util.Optional;
 public abstract class AbstractProfileService<T extends IHasUser, ID extends Serializable>
         extends AbstractService<T, ID> {
 
+    protected final PasswordEncoder passwordEncoder;
+
     private final IProfileDao<T, ID> dao;
 
-    protected AbstractProfileService(IProfileDao<T, ID> dao) {
+    protected AbstractProfileService(IProfileDao<T, ID> dao, PasswordEncoder passwordEncoder) {
         super(dao);
         this.dao = dao;
+        this.passwordEncoder = passwordEncoder;
     }
 
     protected abstract Optional<T> findByUsername(String username);
 
-    @Transactional(readOnly = true)
-    public boolean matchCredentials(String username, String password) {
-        var matches = findByUsername(username)
-                .map(profile -> profile.getUser().getPassword().equals(password))
-                .orElse(false);
-        log.debug("Credentials match check for '{}': {}", username, matches);
-        return matches;
-    }
+    protected abstract Optional<T> findByUsernameWithProfile(String username);
 
     @Transactional
-    public void changePassword(String username, String oldPassword, String newPassword) {
+    public void changePassword(String username, String newPassword) {
         log.info("Changing password for: {}", username);
 
-        var profile = authenticate(username, oldPassword);
         if (newPassword == null || newPassword.isBlank()) {
             throw new ValidationException("New password is required");
         }
-        profile.getUser().setPassword(newPassword);
+
+        var profile = getProfileLazy(username);
+        profile.getUser().setPassword(passwordEncoder.encode(newPassword));
         dao.update(profile);
         log.info("Password changed for: {}", username);
     }
 
     @Transactional
-    public void setActive(String username, String password, boolean active) {
+    public void setActive(String username, boolean active) {
         log.info("Setting active status for {} to {}", username, active);
 
-        var profile = authenticate(username, password);
+        var profile = getProfileLazy(username);
         var user = profile.getUser();
 
         if (user.isActive() == active) {
@@ -63,25 +61,19 @@ public abstract class AbstractProfileService<T extends IHasUser, ID extends Seri
     }
 
     @Transactional(readOnly = true)
-    public T getProfile(String username, String password) {
+    public T getProfile(String username) {
         log.info("Getting profile for: {}", username);
-        return authenticate(username, password);
-    }
-
-    @Transactional(readOnly = true)
-    public T authenticate(String username, String password) {
-        log.debug("Authenticating user: {}", username);
-
-        var profile = findByUsername(username)
-                .orElseThrow(() -> new AuthenticationException("Profile not found: " + username));
-        if (!profile.getUser().getPassword().equals(password)) {
-            log.warn("Authentication failed for: {}", username);
-            throw new AuthenticationException("Invalid password for user: " + username);
-        }
-        return profile;
+        return findByUsernameWithProfile(username)
+                .orElseThrow(() -> new EntityNotFoundException("Profile not found: " + username));
     }
 
     protected void update(T entity) {
         dao.update(entity);
+    }
+
+    private T getProfileLazy(String username) {
+        return findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("Profile not found: " + username));
+
     }
 }

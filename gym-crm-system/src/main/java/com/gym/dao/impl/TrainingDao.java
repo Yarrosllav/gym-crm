@@ -27,7 +27,10 @@ public class TrainingDao extends AbstractDao<Training, Long> implements ITrainin
         log.debug("Fetching Trainings for Trainee: {} with criteria", traineeUsername);
 
         var hql = new StringBuilder("""
-                select tr from Training tr
+                select distinct tr from Training tr
+                left join fetch tr.trainer trnr
+                left join fetch trnr.user
+                left join fetch tr.trainingType
                 where tr.trainee.user.username = :traineeUsername
                 """);
         if (fromDate != null) hql.append(" and tr.trainingDate >= :fromDate");
@@ -55,6 +58,8 @@ public class TrainingDao extends AbstractDao<Training, Long> implements ITrainin
 
         var hql = new StringBuilder("""
                 select tr from Training tr
+                left join fetch tr.trainee trn
+                left join fetch trn.user
                 where tr.trainer.user.username = :trainerUsername
                 """);
         if (fromDate != null) hql.append(" and tr.trainingDate >= :fromDate");

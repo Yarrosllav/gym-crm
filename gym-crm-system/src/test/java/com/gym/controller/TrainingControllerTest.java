@@ -2,24 +2,26 @@ package com.gym.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gym.dto.request.AddTrainingRequest;
-import com.gym.exception.AuthenticationException;
-import com.gym.exception.EntityNotFoundException;
+import com.gym.security.JwtService;
+import com.gym.security.TokenBlacklistService;
 import com.gym.service.impl.TrainerService;
 import com.gym.service.impl.TrainingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 
-import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(TrainingController.class)
+@Import(MethodSecurityTestConfig.class)
 class TrainingControllerTest {
 
     @Autowired
@@ -28,65 +30,55 @@ class TrainingControllerTest {
     private ObjectMapper objectMapper;
 
     @MockBean
+    private JwtService jwtService;
+    @MockBean
+    private TokenBlacklistService tokenBlacklistService;
+    @MockBean
     private TrainingService trainingService;
     @MockBean
     private TrainerService trainerService;
 
     @Test
-    void addTraining_shouldReturn200_whenValidRequest() throws Exception {
+    void addTraining_shouldReturn200_whenOwnTrainerUsernameMatches() throws Exception {
         var request = new AddTrainingRequest("John.Smith", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60);
 
         mockMvc.perform(post("/api/trainings")
-                        .header("Password", "pwd")
+                        .with(user("Jane.Doe").roles("TRAINER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void addTraining_shouldReturn400_whenTrainingNameMissing() throws Exception {
-        var request = new AddTrainingRequest("John.Smith", "Jane.Doe", " ", LocalDate.of(2026, 6, 1), 60);
-
-        mockMvc.perform(post("/api/trainings")
-                        .header("Password", "pwd")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void addTraining_shouldReturn400_whenPasswordHeaderMissing() throws Exception {
+    void addTraining_shouldReturn403_whenTrainerUsernameDoesNotMatchToken() throws Exception {
         var request = new AddTrainingRequest("John.Smith", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60);
 
         mockMvc.perform(post("/api/trainings")
+                        .with(user("Someone.Else").roles("TRAINER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isForbidden());
     }
 
     @Test
-    void addTraining_shouldReturn401_whenTrainerAuthFails() throws Exception {
+    void addTraining_shouldReturn200_whenAdmin() throws Exception {
         var request = new AddTrainingRequest("John.Smith", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60);
-        when(trainerService.authenticate("Jane.Doe", "wrong"))
-                .thenThrow(new AuthenticationException("Invalid username or password"));
 
         mockMvc.perform(post("/api/trainings")
-                        .header("Password", "wrong")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk());
     }
 
     @Test
-    void addTraining_shouldReturn404_whenTraineeNotFound() throws Exception {
-        var request = new AddTrainingRequest("Unknown", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60);
-        when(trainingService.addTraining("Unknown", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60))
-                .thenThrow(new EntityNotFoundException("Trainee not found: Unknown"));
+    void addTraining_shouldReturn403_whenTraineeAttempts() throws Exception {
+        var request = new AddTrainingRequest("John.Smith", "Jane.Doe", "Morning Run", LocalDate.of(2026, 6, 1), 60);
 
         mockMvc.perform(post("/api/trainings")
-                        .header("Password", "pwd")
+                        .with(user("John.Smith").roles("TRAINEE"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
     }
 }

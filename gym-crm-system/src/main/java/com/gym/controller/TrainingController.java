@@ -1,14 +1,17 @@
 package com.gym.controller;
 
 import com.gym.dto.request.AddTrainingRequest;
-import com.gym.service.impl.TrainerService;
 import com.gym.service.impl.TrainingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/trainings")
@@ -18,14 +21,10 @@ public class TrainingController {
 
     private final TrainingService trainingService;
 
-    private final TrainerService trainerService;
-
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('TRAINER') and #request.trainerUsername() == authentication.name)")
     @Operation(summary = "Add a new training (no update/delete via REST)")
-    public ResponseEntity<Void> addTraining(
-            @RequestHeader("Password") String password,
-            @Valid @RequestBody AddTrainingRequest request) {
-        trainerService.authenticate(request.trainerUsername(), password);
+    public ResponseEntity<Void> addTraining(@Valid @RequestBody AddTrainingRequest request) {
         trainingService.addTraining(
                 request.traineeUsername(), request.trainerUsername(), request.trainingName(),
                 request.trainingDate(), request.trainingDuration());

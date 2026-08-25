@@ -5,6 +5,7 @@ import com.gym.dao.ITrainerDao;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
 import com.gym.metrics.GymMetrics;
+import com.gym.model.Role;
 import com.gym.model.Trainer;
 import com.gym.model.TrainingType;
 import com.gym.model.User;
@@ -12,6 +13,7 @@ import com.gym.service.AbstractProfileService;
 import com.gym.service.PasswordGenerator;
 import com.gym.service.UsernameGenerator;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,8 +33,8 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
     private final GymMetrics gymMetrics;
 
     public TrainerService(ITrainerDao trainerDao, IReadOnlyDao<TrainingType, Long> trainingTypeDao,
-                          UsernameGenerator usernameGenerator, GymMetrics gymMetrics) {
-        super(trainerDao);
+                          UsernameGenerator usernameGenerator, GymMetrics gymMetrics, PasswordEncoder passwordEncoder) {
+        super(trainerDao, passwordEncoder);
         this.trainerDao = trainerDao;
         this.usernameGenerator = usernameGenerator;
         this.trainingTypeDao = trainingTypeDao;
@@ -45,8 +47,14 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
         return trainerDao.findByUsername(username);
     }
 
+    @Override
+    protected Optional<Trainer> findByUsernameWithProfile(String username) {
+        log.debug("Fetching Trainee with profile by username: {}", username);
+        return trainerDao.findByUsernameWithProfile(username);
+    }
+
     @Transactional
-    public Trainer createProfile(String firstName, String lastName, Long specializationId) {
+    public TrainerRegistrationResult createProfile(String firstName, String lastName, Long specializationId) {
         log.info("Creating Trainer profile with first name: {}, last name: {}", firstName, lastName);
 
         validateTrainer(firstName, lastName, specializationId);
@@ -57,12 +65,14 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
                     return new EntityNotFoundException("Training type not found: " + specializationId);
                 });
 
+        var originalPassword = PasswordGenerator.generate();
         var user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(usernameGenerator.generate(firstName, lastName));
-        user.setPassword(PasswordGenerator.generate());
+        user.setPassword(passwordEncoder.encode(originalPassword));
         user.setActive(true);
+        user.setRole(Role.ROLE_TRAINER);
 
         var trainer = new Trainer();
         trainer.setUser(user);
@@ -71,13 +81,13 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
         create(trainer);
         gymMetrics.incrementTrainerRegistrations();
         log.info("Created Trainer profile with username: {}", user.getUsername());
-        return trainer;
+        return new TrainerRegistrationResult(trainer, originalPassword);
     }
 
     @Transactional
-    public Trainer updateProfileAndStatus(String username, String password, String firstName,
+    public Trainer updateProfileAndStatus(String username, String firstName,
                                           String lastName, boolean active) {
-        var trainer = authenticate(username, password);
+        var trainer = getProfile(username);
 
         if (firstName == null || firstName.isBlank() || lastName == null || lastName.isBlank()) {
             log.warn("Update Trainer profile rejected: first/last name missing, username={}", username);
@@ -108,5 +118,8 @@ public class TrainerService extends AbstractProfileService<Trainer, Long> {
             log.warn("Create Trainer profile rejected: specialization missing");
             throw new ValidationException("Specialization is required");
         }
+    }
+
+    public record TrainerRegistrationResult(Trainer trainer, String originalPassword) {
     }
 }

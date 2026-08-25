@@ -2,10 +2,10 @@ package com.gym.service;
 
 import com.gym.dao.IReadOnlyDao;
 import com.gym.dao.ITrainerDao;
-import com.gym.exception.AuthenticationException;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
 import com.gym.metrics.GymMetrics;
+import com.gym.model.Role;
 import com.gym.model.Trainer;
 import com.gym.model.TrainingType;
 import com.gym.model.User;
@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,21 +34,23 @@ class TrainerServiceTest {
     private UsernameGenerator usernameGenerator;
     @Mock
     private GymMetrics gymMetrics;
+    @Mock
+    private PasswordEncoder passwordEncoder;
 
     private TrainerService trainerService;
 
     @BeforeEach
     void setUp() {
-        trainerService = new TrainerService(trainerDao, trainingTypeDao, usernameGenerator, gymMetrics);
+        trainerService = new TrainerService(trainerDao, trainingTypeDao, usernameGenerator, gymMetrics, passwordEncoder);
     }
 
-    private Trainer buildTrainer(String username, String password, boolean active) {
+    private Trainer buildTrainer(String username, boolean active) {
         var user = new User();
         user.setFirstName("Jane");
         user.setLastName("Doe");
         user.setUsername(username);
-        user.setPassword(password);
         user.setActive(active);
+        user.setRole(Role.ROLE_TRAINER);
 
         var trainer = new Trainer();
         trainer.setId(1L);
@@ -56,22 +59,21 @@ class TrainerServiceTest {
     }
 
     @Test
-    void createProfile_shouldPersistTrainerWithResolvedSpecialization() {
+    void createProfile_shouldEncodePasswordAndReturnRawInResult() {
         var specialization = new TrainingType(5L, "YOGA");
 
-        when(trainingTypeDao.findById(5L)).thenReturn(Optional.of(specialization));
         when(usernameGenerator.generate("Jane", "Doe")).thenReturn("Jane.Doe");
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$encoded");
+        when(trainingTypeDao.findById(5L)).thenReturn(Optional.of(specialization));
 
         var result = trainerService.createProfile("Jane", "Doe", 5L);
 
-        assertEquals("Jane.Doe", result.getUser().getUsername());
-        assertEquals(specialization, result.getSpecialization());
-
-        assertNotNull(result.getUser().getPassword());
-        assertEquals(10, result.getUser().getPassword().length());
-
+        assertEquals(10, result.originalPassword().length());
+        assertEquals("$2a$10$encoded", result.trainer().getUser().getPassword());
+        assertEquals(Role.ROLE_TRAINER, result.trainer().getUser().getRole());
+        verify(passwordEncoder).encode(result.originalPassword());
+        verify(trainerDao).create(result.trainer());
         verify(gymMetrics).incrementTrainerRegistrations();
-        verify(trainerDao).create(result);
     }
 
     @Test
@@ -93,12 +95,12 @@ class TrainerServiceTest {
     @Test
     void updateProfileAndStatus_shouldUpdateNameAndKeepSpecializationReadOnly() {
         var originalSpecialization = new TrainingType(5L, "YOGA");
-        var trainer = buildTrainer("Jane.Doe", "pwd", true);
+        var trainer = buildTrainer("Jane.Doe", true);
         trainer.setSpecialization(originalSpecialization);
-        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
+        when(trainerDao.findByUsernameWithProfile("Jane.Doe")).thenReturn(Optional.of(trainer));
 
-        var result = trainerService.updateProfileAndStatus("Jane.Doe", "pwd",
-                "Janet", "Doey", false);
+        var result = trainerService.updateProfileAndStatus("Jane.Doe", "Janet",
+                "Doey", false);
 
         assertEquals("Janet", result.getUser().getFirstName());
         assertEquals("Doey", result.getUser().getLastName());
@@ -109,50 +111,31 @@ class TrainerServiceTest {
 
     @Test
     void updateProfileAndStatus_shouldThrow_whenNameMissing() {
-        var trainer = buildTrainer("Jane.Doe", "pwd", true);
-        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
+        var trainer = buildTrainer("Jane.Doe", true);
+        when(trainerDao.findByUsernameWithProfile("Jane.Doe")).thenReturn(Optional.of(trainer));
 
         assertThrows(ValidationException.class,
-                () -> trainerService.updateProfileAndStatus("Jane.Doe", "pwd", " ",
+                () -> trainerService.updateProfileAndStatus("Jane.Doe", " ",
                         "Doey", true));
         verify(trainerDao, never()).update(any());
-    }
-
-    @Test
-    void updateProfileAndStatus_shouldThrow_whenPasswordWrong() {
-        var trainer = buildTrainer("Jane.Doe", "pwd", true);
-        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
-
-        assertThrows(AuthenticationException.class,
-                () -> trainerService.updateProfileAndStatus("Jane.Doe", "wrong", "Janet",
-                        "Doey", true));
-        verify(trainerDao, never()).update(any());
-    }
-
-    @Test
-    void matchCredentials_shouldReturnTrue_whenPasswordMatches() {
-        var trainer = buildTrainer("Jane.Doe", "secret", true);
-        when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
-
-        assertTrue(trainerService.matchCredentials("Jane.Doe", "secret"));
     }
 
     @Test
     void setActive_shouldDeactivate_whenCurrentlyActive() {
-        var trainer = buildTrainer("Jane.Doe", "pwd", true);
+        var trainer = buildTrainer("Jane.Doe", true);
         when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
 
-        trainerService.setActive("Jane.Doe", "pwd", false);
+        trainerService.setActive("Jane.Doe", false);
 
         assertFalse(trainer.getUser().isActive());
     }
 
     @Test
     void setActive_shouldThrow_whenCurrentlyActive() {
-        var trainer = buildTrainer("John.Smith", "pwd", true);
+        var trainer = buildTrainer("John.Smith", true);
         when(trainerDao.findByUsername("John.Smith")).thenReturn(Optional.of(trainer));
 
-        assertThrows(ValidationException.class, () -> trainerService.setActive("John.Smith", "pwd", true));
+        assertThrows(ValidationException.class, () -> trainerService.setActive("John.Smith", true));
         verify(trainerDao, never()).update(trainer);
     }
 
@@ -164,12 +147,29 @@ class TrainerServiceTest {
     }
 
     @Test
-    void changePassword_shouldUpdatePassword() {
-        var trainer = buildTrainer("Jane.Doe", "old", true);
+    void getProfile_shouldReturnProfile_whenFound() {
+        var trainer = buildTrainer("Jane.Doe", true);
+        when(trainerDao.findByUsernameWithProfile("Jane.Doe")).thenReturn(Optional.of(trainer));
+
+        assertEquals(trainer, trainerService.getProfile("Jane.Doe"));
+    }
+
+    @Test
+    void getProfile_shouldThrow_whenNotFound() {
+        when(trainerDao.findByUsernameWithProfile("Unknown")).thenReturn(Optional.empty());
+
+        assertThrows(EntityNotFoundException.class, () -> trainerService.getProfile("Unknown"));
+    }
+
+    @Test
+    void changePassword_shouldEncodeNewPassword() {
+        var trainer = buildTrainer("Jane.Doe", true);
         when(trainerDao.findByUsername("Jane.Doe")).thenReturn(Optional.of(trainer));
+        when(passwordEncoder.encode("newPwd1234")).thenReturn("$2a$10$newEncoded");
 
-        trainerService.changePassword("Jane.Doe", "old", "newPassword1");
+        trainerService.changePassword("Jane.Doe", "newPwd1234");
 
-        assertEquals("newPassword1", trainer.getUser().getPassword());
+        assertEquals("$2a$10$newEncoded", trainer.getUser().getPassword());
+        verify(trainerDao).update(trainer);
     }
 }

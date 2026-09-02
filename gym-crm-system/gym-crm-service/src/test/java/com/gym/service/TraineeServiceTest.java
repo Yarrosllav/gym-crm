@@ -2,9 +2,9 @@ package com.gym.service;
 
 import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
-import com.gym.dto.request.TrainerWorkloadRequest;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.messaging.TrainerWorkloadMessage;
 import com.gym.metrics.GymMetrics;
 import com.gym.model.*;
 import com.gym.service.impl.TraineeService;
@@ -211,7 +211,7 @@ class TraineeServiceTest {
 
         verify(reportIntegrationService).notifyWorkload(
                 eq("Mike.Jones"), any(), any(), anyBoolean(), eq(LocalDate.of(2026, 1, 10)), eq(60),
-                eq(TrainerWorkloadRequest.ActionType.DELETE));
+                eq(TrainerWorkloadMessage.ActionType.DELETE));
         verify(traineeDao).delete(trainee);
     }
 

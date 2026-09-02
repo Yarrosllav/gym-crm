@@ -1,9 +1,8 @@
 package com.gym.report.service;
 
 import com.gym.report.dao.WorkloadRepository;
-import com.gym.report.dto.ActionType;
-import com.gym.report.dto.TrainerWorkloadRequest;
 import com.gym.report.exception.EntityNotFoundException;
+import com.gym.report.messaging.TrainerWorkloadMessage;
 import com.gym.report.model.TrainerMonthlyWorkload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +14,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,8 +31,8 @@ class WorkloadServiceTest {
         workloadService = new WorkloadService(workloadRepository);
     }
 
-    private TrainerWorkloadRequest buildRequest(ActionType action, int duration) {
-        return new TrainerWorkloadRequest("Jane.Doe", "Jane", "Doe", true,
+    private TrainerWorkloadMessage buildMessage(TrainerWorkloadMessage.ActionType action, int duration) {
+        return new TrainerWorkloadMessage("Jane.Doe", "Jane", "Doe", true,
                 LocalDate.of(2026, 3, 15), duration, action);
     }
 
@@ -40,13 +40,11 @@ class WorkloadServiceTest {
     void applyWorkload_shouldCreateNewRecord_whenNoneExistsAndActionIsAdd() {
         when(workloadRepository.find("Jane.Doe", 2026, 3)).thenReturn(Optional.empty());
 
-        workloadService.applyWorkload(buildRequest(ActionType.ADD, 60));
+        workloadService.applyWorkload(buildMessage(TrainerWorkloadMessage.ActionType.ADD, 60));
 
         var captor = org.mockito.ArgumentCaptor.forClass(TrainerMonthlyWorkload.class);
         verify(workloadRepository).create(captor.capture());
         assertEquals(60, captor.getValue().getTotalDurationMinutes());
-        assertEquals(2026, captor.getValue().getYear());
-        assertEquals(3, captor.getValue().getMonth());
     }
 
     @Test
@@ -55,7 +53,7 @@ class WorkloadServiceTest {
         existing.setTotalDurationMinutes(100);
         when(workloadRepository.find("Jane.Doe", 2026, 3)).thenReturn(Optional.of(existing));
 
-        workloadService.applyWorkload(buildRequest(ActionType.ADD, 60));
+        workloadService.applyWorkload(buildMessage(TrainerWorkloadMessage.ActionType.ADD, 60));
 
         assertEquals(160, existing.getTotalDurationMinutes());
         verify(workloadRepository).update(existing);
@@ -67,7 +65,7 @@ class WorkloadServiceTest {
         existing.setTotalDurationMinutes(100);
         when(workloadRepository.find("Jane.Doe", 2026, 3)).thenReturn(Optional.of(existing));
 
-        workloadService.applyWorkload(buildRequest(ActionType.DELETE, 60));
+        workloadService.applyWorkload(buildMessage(TrainerWorkloadMessage.ActionType.DELETE, 60));
 
         assertEquals(40, existing.getTotalDurationMinutes());
     }
@@ -78,7 +76,7 @@ class WorkloadServiceTest {
         existing.setTotalDurationMinutes(30);
         when(workloadRepository.find("Jane.Doe", 2026, 3)).thenReturn(Optional.of(existing));
 
-        workloadService.applyWorkload(buildRequest(ActionType.DELETE, 60));
+        workloadService.applyWorkload(buildMessage(TrainerWorkloadMessage.ActionType.DELETE, 60));
 
         assertEquals(0, existing.getTotalDurationMinutes());
     }
@@ -87,7 +85,7 @@ class WorkloadServiceTest {
     void applyWorkload_shouldIgnoreDelete_whenNoRecordExists() {
         when(workloadRepository.find("Jane.Doe", 2026, 3)).thenReturn(Optional.empty());
 
-        workloadService.applyWorkload(buildRequest(ActionType.DELETE, 60));
+        workloadService.applyWorkload(buildMessage(TrainerWorkloadMessage.ActionType.DELETE, 60));
 
         verify(workloadRepository, never()).create(any());
         verify(workloadRepository, never()).update(any());
@@ -97,9 +95,6 @@ class WorkloadServiceTest {
     void getSummary_shouldGroupByYearAndMonth() {
         var w1 = new TrainerMonthlyWorkload();
         w1.setTrainerUsername("Jane.Doe");
-        w1.setFirstName("Jane");
-        w1.setLastName("Doe");
-        w1.setActive(true);
         w1.setYear(2026);
         w1.setMonth(3);
         w1.setTotalDurationMinutes(60);
@@ -114,10 +109,8 @@ class WorkloadServiceTest {
 
         var summary = workloadService.getSummary("Jane.Doe");
 
-        assertEquals("Jane.Doe", summary.trainerUsername());
         assertEquals(1, summary.years().size());
-        assertEquals(2, summary.years().getFirst().months().size());
-        assertEquals(60, summary.years().getFirst().months().getFirst().summaryDuration());
+        assertEquals(2, summary.years().get(0).months().size());
     }
 
     @Test

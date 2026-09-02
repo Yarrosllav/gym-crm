@@ -1,10 +1,9 @@
 package com.gym.service;
 
-import com.gym.client.ReportServiceClient;
-import com.gym.dto.request.TrainerWorkloadRequest;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import com.gym.messaging.TrainerWorkloadMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -14,21 +13,20 @@ import java.time.LocalDate;
 @RequiredArgsConstructor
 public class ReportIntegrationService {
 
-    private final ReportServiceClient reportServiceClient;
+    private static final String QUEUE = "trainer.workload.queue";
 
-    @CircuitBreaker(name = "reportService", fallbackMethod = "fallback")
+    private final JmsTemplate jmsTemplate;
+
     public void notifyWorkload(String trainerUsername, String firstName, String lastName, boolean active,
                                LocalDate trainingDate, int trainingDuration,
-                               TrainerWorkloadRequest.ActionType actionType) {
-        log.info("Calling report service for trainer={}", trainerUsername);
-        reportServiceClient.applyWorkload(new TrainerWorkloadRequest(
-                trainerUsername, firstName, lastName, active, trainingDate, trainingDuration, actionType));
-    }
-
-    void fallback(String trainerUsername, String firstName, String lastName, boolean active,
-                          LocalDate trainingDate, int trainingDuration,
-                          TrainerWorkloadRequest.ActionType actionType, Throwable ex) {
-        log.warn("Report service unavailable, workload update skipped for trainer={}: {}",
-                trainerUsername, ex.getMessage());
+                               TrainerWorkloadMessage.ActionType actionType) {
+        var message = new TrainerWorkloadMessage(
+                trainerUsername, firstName, lastName, active, trainingDate, trainingDuration, actionType);
+        try {
+            jmsTemplate.convertAndSend(QUEUE, message);
+            log.info("Workload message sent for trainer={}, action={}", trainerUsername, actionType);
+        } catch (Exception ex) {
+            log.warn("Failed to send workload message for trainer={}: {}", trainerUsername, ex.getMessage());
+        }
     }
 }

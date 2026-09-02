@@ -3,9 +3,9 @@ package com.gym.service.impl;
 import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
 import com.gym.dao.ITrainingDao;
-import com.gym.dto.request.TrainerWorkloadRequest;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.messaging.TrainerWorkloadMessage;
 import com.gym.model.Training;
 import com.gym.service.AbstractService;
 import com.gym.service.ReportIntegrationService;
@@ -67,9 +67,10 @@ public class TrainingService extends AbstractService<Training, Long> {
         create(training);
         log.info("Added training '{}' for trainee {} with trainer {}", trainingName, traineeUsername, trainerUsername);
 
+        var trainerUser = trainer.getUser();
         reportIntegrationService.notifyWorkload(
-                trainer.getUser().getUsername(), trainer.getUser().getFirstName(), trainer.getUser().getLastName(),
-                trainer.getUser().isActive(), trainingDate, trainingDuration, TrainerWorkloadRequest.ActionType.ADD);
+                trainerUser.getUsername(), trainerUser.getFirstName(), trainerUser.getLastName(),
+                trainerUser.isActive(), trainingDate, trainingDuration, TrainerWorkloadMessage.ActionType.ADD);
 
         return training;
     }

@@ -2,9 +2,9 @@ package com.gym.service.impl;
 
 import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
-import com.gym.dto.request.TrainerWorkloadRequest;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.messaging.TrainerWorkloadMessage;
 import com.gym.metrics.GymMetrics;
 import com.gym.model.Role;
 import com.gym.model.Trainee;
@@ -123,7 +123,7 @@ public class TraineeService extends AbstractProfileService<Trainee, Long> {
             reportIntegrationService.notifyWorkload(
                     trainer.getUser().getUsername(), trainer.getUser().getFirstName(), trainer.getUser().getLastName(),
                     trainer.getUser().isActive(), training.getTrainingDate(), training.getTrainingDuration(),
-                    TrainerWorkloadRequest.ActionType.DELETE);
+                    TrainerWorkloadMessage.ActionType.DELETE);
         });
 
         traineeDao.delete(trainee);

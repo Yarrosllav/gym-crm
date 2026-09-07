@@ -3,9 +3,9 @@ package com.gym.service;
 import com.gym.dao.ITraineeDao;
 import com.gym.dao.ITrainerDao;
 import com.gym.dao.ITrainingDao;
-import com.gym.dto.request.TrainerWorkloadRequest;
 import com.gym.exception.EntityNotFoundException;
 import com.gym.exception.ValidationException;
+import com.gym.messaging.TrainerWorkloadMessage;
 import com.gym.model.Trainee;
 import com.gym.model.Trainer;
 import com.gym.model.TrainingType;
@@ -86,7 +86,7 @@ class TrainingServiceTest {
 
         verify(reportIntegrationService).notifyWorkload(
                 "Mike.Jones", "Mike", "Jones", true, LocalDate.of(2026, 6, 1), 60,
-                TrainerWorkloadRequest.ActionType.ADD);
+                TrainerWorkloadMessage.ActionType.ADD);
     }
 
     @Test

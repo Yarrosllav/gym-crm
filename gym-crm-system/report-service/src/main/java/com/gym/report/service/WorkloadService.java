@@ -1,8 +1,11 @@
 package com.gym.report.service;
 
 import com.gym.report.dao.WorkloadRepository;
-import com.gym.report.dto.*;
+import com.gym.report.dto.MonthSummary;
+import com.gym.report.dto.TrainerWorkloadSummaryResponse;
+import com.gym.report.dto.YearSummary;
 import com.gym.report.exception.EntityNotFoundException;
+import com.gym.report.messaging.TrainerWorkloadMessage;
 import com.gym.report.model.TrainerMonthlyWorkload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,44 +23,44 @@ public class WorkloadService {
     private final WorkloadRepository workloadRepository;
 
     @Transactional
-    public void applyWorkload(TrainerWorkloadRequest request) {
+    public void applyWorkload(TrainerWorkloadMessage message) {
         log.info("Applying workload: trainer={}, date={}, duration={}, action={}",
-                request.trainerUsername(), request.trainingDate(), request.trainingDuration(), request.actionType());
+                message.trainerUsername(), message.trainingDate(), message.trainingDuration(), message.actionType());
 
-        var year = request.trainingDate().getYear();
-        var month = request.trainingDate().getMonthValue();
-        var existing = workloadRepository.find(request.trainerUsername(), year, month);
+        var year = message.trainingDate().getYear();
+        var month = message.trainingDate().getMonthValue();
+        var existing = workloadRepository.find(message.trainerUsername(), year, month);
 
         if (existing.isPresent()) {
             var workload = existing.get();
-            workload.setFirstName(request.firstName());
-            workload.setLastName(request.lastName());
-            workload.setActive(request.isActive());
-            workload.setTotalDurationMinutes(applyDelta(workload.getTotalDurationMinutes(), request));
+            workload.setFirstName(message.firstName());
+            workload.setLastName(message.lastName());
+            workload.setActive(message.isActive());
+            workload.setTotalDurationMinutes(applyDelta(workload.getTotalDurationMinutes(), message));
             workloadRepository.update(workload);
-        } else if (request.actionType() == ActionType.DELETE) {
+        } else if (message.actionType() == TrainerWorkloadMessage.ActionType.DELETE) {
             log.warn("Delete requested for non-existing workload record: trainer={}, year={}, month={}",
-                    request.trainerUsername(), year, month);
+                    message.trainerUsername(), year, month);
             return;
         } else {
             var workload = new TrainerMonthlyWorkload();
-            workload.setTrainerUsername(request.trainerUsername());
-            workload.setFirstName(request.firstName());
-            workload.setLastName(request.lastName());
-            workload.setActive(request.isActive());
+            workload.setTrainerUsername(message.trainerUsername());
+            workload.setFirstName(message.firstName());
+            workload.setLastName(message.lastName());
+            workload.setActive(message.isActive());
             workload.setYear(year);
             workload.setMonth(month);
-            workload.setTotalDurationMinutes(request.trainingDuration());
+            workload.setTotalDurationMinutes(message.trainingDuration());
             workloadRepository.create(workload);
         }
 
-        log.info("Workload applied successfully for trainer={}", request.trainerUsername());
+        log.info("Workload applied successfully for trainer={}", message.trainerUsername());
     }
 
-    private int applyDelta(int current, TrainerWorkloadRequest request) {
-        return request.actionType() == ActionType.ADD
-                ? current + request.trainingDuration()
-                : Math.max(0, current - request.trainingDuration());
+    private int applyDelta(int current, TrainerWorkloadMessage message) {
+        return message.actionType() == TrainerWorkloadMessage.ActionType.ADD
+                ? current + message.trainingDuration()
+                : Math.max(0, current - message.trainingDuration());
     }
 
     @Transactional(readOnly = true)

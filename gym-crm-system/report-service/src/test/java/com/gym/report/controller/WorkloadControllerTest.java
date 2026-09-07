@@ -2,7 +2,7 @@ package com.gym.report.controller;
 
 import com.gym.report.dto.TrainerWorkloadSummaryResponse;
 import com.gym.report.exception.EntityNotFoundException;
-import com.gym.report.service.WorkloadService;
+import com.gym.report.service.TrainerSummaryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -23,11 +23,11 @@ class WorkloadControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private WorkloadService workloadService;
+    private TrainerSummaryService trainerSummaryService;
 
     @Test
     void getSummary_shouldReturn200() throws Exception {
-        when(workloadService.getSummary("Jane.Doe")).thenReturn(
+        when(trainerSummaryService.getSummary("Jane.Doe")).thenReturn(
                 new TrainerWorkloadSummaryResponse("Jane.Doe", "Jane", "Doe", true, List.of()));
 
         mockMvc.perform(get("/api/trainer-workloads/Jane.Doe"))
@@ -37,7 +37,7 @@ class WorkloadControllerTest {
 
     @Test
     void getSummary_shouldReturn404_whenNoData() throws Exception {
-        when(workloadService.getSummary("Unknown"))
+        when(trainerSummaryService.getSummary("Unknown"))
                 .thenThrow(new EntityNotFoundException("No workload data found for trainer: Unknown"));
 
         mockMvc.perform(get("/api/trainer-workloads/Unknown"))

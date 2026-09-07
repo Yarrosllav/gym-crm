@@ -23,14 +23,14 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleValidation_shouldReturn400_withFieldErrorMessage() {
+    void handleBeanValidation_shouldReturn400_withFieldErrorMessage() {
         var bindingResult = mock(BindingResult.class);
         var fieldError = new FieldError("request", "trainerUsername", "Trainer username is required");
         when(bindingResult.getFieldErrors()).thenReturn(java.util.List.of(fieldError));
         var ex = new MethodArgumentNotValidException(
                 mock(org.springframework.core.MethodParameter.class), bindingResult);
 
-        var response = handler.handleValidation(ex);
+        var response = handler.handleBeanValidation(ex);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertEquals("trainerUsername: Trainer username is required", response.getBody().message());

@@ -3,6 +3,7 @@ package com.gym.service;
 import com.gym.messaging.TrainerWorkloadMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Service;
 
@@ -22,8 +23,15 @@ public class ReportIntegrationService {
                                TrainerWorkloadMessage.ActionType actionType) {
         var message = new TrainerWorkloadMessage(
                 trainerUsername, firstName, lastName, active, trainingDate, trainingDuration, actionType);
+        var transactionId = MDC.get("transactionId");
+
         try {
-            jmsTemplate.convertAndSend(QUEUE, message);
+            jmsTemplate.convertAndSend(QUEUE, message, m -> {
+                if (transactionId != null) {
+                    m.setStringProperty("transactionId", transactionId);
+                }
+                return m;
+            });
             log.info("Workload message sent for trainer={}, action={}", trainerUsername, actionType);
         } catch (Exception ex) {
             log.warn("Failed to send workload message for trainer={}: {}", trainerUsername, ex.getMessage());

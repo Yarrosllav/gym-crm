@@ -8,6 +8,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.core.MessagePostProcessor;
 
 import java.time.LocalDate;
 
@@ -34,7 +35,8 @@ class ReportIntegrationServiceTest {
         reportIntegrationService.notifyWorkload("Jane.Doe", "Jane", "Doe", true,
                 LocalDate.of(2026, 3, 15), 60, TrainerWorkloadMessage.ActionType.ADD);
 
-        verify(jmsTemplate).convertAndSend(eq("trainer.workload.queue"), any(TrainerWorkloadMessage.class));
+        verify(jmsTemplate).convertAndSend(eq("trainer.workload.queue"), any(TrainerWorkloadMessage.class),
+                any(MessagePostProcessor.class));
     }
 
     @Test
@@ -53,7 +55,8 @@ class ReportIntegrationServiceTest {
         reportIntegrationService.notifyWorkload("Jane.Doe", "Jane", "Doe", true,
                 LocalDate.of(2026, 3, 15), 60, TrainerWorkloadMessage.ActionType.DELETE);
 
-        verify(jmsTemplate).convertAndSend(eq("trainer.workload.queue"), captor.capture());
+        verify(jmsTemplate).convertAndSend(eq("trainer.workload.queue"), captor.capture(),
+                any(MessagePostProcessor.class));
         var sent = captor.getValue();
         assertDoesNotThrow(() -> {
             assert sent.trainerUsername().equals("Jane.Doe");

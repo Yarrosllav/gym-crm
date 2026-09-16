@@ -36,6 +36,10 @@ public class BruteForceProtector {
         attemptsByUsername.remove(username);
     }
 
+    public void resetAll() {
+        attemptsByUsername.clear();
+    }
+
     private record Attempts(int count, Instant lockedUntil) {
     }
 }

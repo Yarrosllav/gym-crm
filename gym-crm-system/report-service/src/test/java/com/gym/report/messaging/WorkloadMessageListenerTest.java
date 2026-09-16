@@ -1,6 +1,9 @@
 package com.gym.report.messaging;
 
-import com.gym.report.service.WorkloadService;
+import com.gym.report.exception.ValidationException;
+import com.gym.report.service.TrainerSummaryService;
+import jakarta.jms.JMSException;
+import jakarta.jms.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,7 +14,6 @@ import org.springframework.jms.core.JmsTemplate;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -19,15 +21,17 @@ import static org.mockito.Mockito.*;
 class WorkloadMessageListenerTest {
 
     @Mock
-    private WorkloadService workloadService;
+    private TrainerSummaryService trainerSummaryService;
     @Mock
     private JmsTemplate jmsTemplate;
+    @Mock
+    private Message rawMessage;
 
     private WorkloadMessageListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new WorkloadMessageListener(workloadService, jmsTemplate);
+        listener = new WorkloadMessageListener(trainerSummaryService, jmsTemplate);
     }
 
     private TrainerWorkloadMessage buildValidMessage() {
@@ -36,50 +40,57 @@ class WorkloadMessageListenerTest {
     }
 
     @Test
-    void handleWorkloadMessage_shouldProcessValidMessage() {
-        listener.handleWorkloadMessage(buildValidMessage());
+    void handleWorkloadMessage_shouldProcessValidMessage() throws JMSException {
+        when(rawMessage.getStringProperty("transactionId")).thenReturn("tx-123");
+        var message = buildValidMessage();
 
-        verify(workloadService).applyWorkload(buildValidMessage());
+        listener.handleWorkloadMessage(message, rawMessage);
+
+        verify(trainerSummaryService).processWorkloadEvent(message);
         verifyNoInteractions(jmsTemplate);
     }
 
     @Test
-    void handleWorkloadMessage_shouldRouteToDlq_whenTrainerUsernameMissing() {
-        var invalid = new TrainerWorkloadMessage(" ", "Jane", "Doe", true,
-                LocalDate.of(2026, 3, 15), 60, TrainerWorkloadMessage.ActionType.ADD);
+    void handleWorkloadMessage_shouldGenerateTransactionId_whenMissingOnMessage() throws JMSException {
+        when(rawMessage.getStringProperty("transactionId")).thenReturn(null);
+        var message = buildValidMessage();
 
-        listener.handleWorkloadMessage(invalid);
+        listener.handleWorkloadMessage(message, rawMessage);
 
-        verify(jmsTemplate).convertAndSend(eq("trainer.workload.dlq"), eq(invalid));
-        verifyNoInteractions(workloadService);
+        verify(trainerSummaryService).processWorkloadEvent(message);
     }
 
     @Test
-    void handleWorkloadMessage_shouldRouteToDlq_whenTrainingDateMissing() {
-        var invalid = new TrainerWorkloadMessage("Jane.Doe", "Jane", "Doe", true,
-                null, 60, TrainerWorkloadMessage.ActionType.ADD);
+    void handleWorkloadMessage_shouldRouteToDlq_whenServiceThrowsValidationException() throws JMSException {
+        when(rawMessage.getStringProperty("transactionId")).thenReturn("tx-123");
+        var message = buildValidMessage();
+        doThrow(new ValidationException("trainerUsername is required"))
+                .when(trainerSummaryService).processWorkloadEvent(message);
 
-        listener.handleWorkloadMessage(invalid);
+        listener.handleWorkloadMessage(message, rawMessage);
 
-        verify(jmsTemplate).convertAndSend(eq("trainer.workload.dlq"), any(TrainerWorkloadMessage.class));
-        verifyNoInteractions(workloadService);
+        verify(jmsTemplate).convertAndSend(eq("trainer.workload.dlq"), eq(message));
     }
 
     @Test
-    void handleWorkloadMessage_shouldRouteToDlq_whenActionTypeMissing() {
-        var invalid = new TrainerWorkloadMessage("Jane.Doe", "Jane", "Doe", true,
-                LocalDate.of(2026, 3, 15), 60, null);
+    void handleWorkloadMessage_shouldPropagateException_forRedelivery_whenRetriesExhausted() throws JMSException {
+        when(rawMessage.getStringProperty("transactionId")).thenReturn("tx-123");
+        var message = buildValidMessage();
+        doThrow(new IllegalStateException("Failed to update trainer summary after 5 retries"))
+                .when(trainerSummaryService).processWorkloadEvent(message);
 
-        listener.handleWorkloadMessage(invalid);
-
-        verify(jmsTemplate).convertAndSend(eq("trainer.workload.dlq"), any(TrainerWorkloadMessage.class));
+        assertThrows(IllegalStateException.class, () -> listener.handleWorkloadMessage(message, rawMessage));
+        verifyNoInteractions(jmsTemplate);
     }
 
     @Test
-    void handleWorkloadMessage_shouldPropagateException_forRedeliveryOnTechnicalFailure() {
-        doThrow(new RuntimeException("DB connection lost")).when(workloadService).applyWorkload(any());
+    void handleWorkloadMessage_shouldPropagateException_forRedeliveryOnTechnicalFailure() throws JMSException {
+        when(rawMessage.getStringProperty("transactionId")).thenReturn("tx-123");
+        var message = buildValidMessage();
+        doThrow(new RuntimeException("DB connection lost"))
+                .when(trainerSummaryService).processWorkloadEvent(message);
 
-        assertThrows(RuntimeException.class, () -> listener.handleWorkloadMessage(buildValidMessage()));
+        assertThrows(RuntimeException.class, () -> listener.handleWorkloadMessage(message, rawMessage));
         verifyNoInteractions(jmsTemplate);
     }
 }

@@ -12,6 +12,7 @@ import com.gym.report.model.TrainerTrainingSummary;
 import com.gym.report.model.YearSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
@@ -48,7 +49,7 @@ public class TrainerSummaryService {
 
                 log.info("Trainer summary saved for username={}", message.trainerUsername());
                 return;
-            } catch (OptimisticLockingFailureException ex) {
+            } catch (OptimisticLockingFailureException | DuplicateKeyException ex) {
                 log.warn("Concurrent update detected for trainer={}, retry {}/{}",
                         message.trainerUsername(), attempt, MAX_RETRIES);
             }

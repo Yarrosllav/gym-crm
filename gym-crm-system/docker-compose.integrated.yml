@@ -1,0 +1,112 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: gym-mysql
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - gym-net
+
+  mongo:
+    image: mongo:7.0
+    container_name: report-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping').ok"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - gym-net
+
+  activemq:
+    image: apache/activemq-classic:6.2.0
+    container_name: gym-activemq
+    ports:
+      - "61616:61616"
+      - "8161:8161"
+    networks:
+      - gym-net
+
+  gym-crm:
+    build:
+      context: .
+      dockerfile: gym-crm-service/Dockerfile
+    image: gym-crm:integrated
+    container_name: gym-crm
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      PROD_DB_URL: jdbc:mysql://mysql:3306/gymcrm?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      PROD_DB_USERNAME: ${PROD_DB_USERNAME}
+      PROD_DB_PASSWORD: ${PROD_DB_PASSWORD}
+      PROD_ACTIVEMQ_BROKER_URL: tcp://activemq:61616
+      PROD_ACTIVEMQ_USER: guest
+      PROD_ACTIVEMQ_PASSWORD: guest
+      EUREKA_CLIENT_ENABLED: "false"
+      JWT_SECRET: ${JWT_SECRET_INTEGRATED}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      activemq:
+        condition: service_started
+    networks:
+      - gym-net
+
+  report-service:
+    build:
+      context: .
+      dockerfile: report-service/Dockerfile
+    image: report-service:integrated
+    container_name: report-service
+    ports:
+      - "8081:8081"
+    environment:
+      MONGO_URI: mongodb://mongo:27017/report_db
+      ACTIVEMQ_BROKER_URL: tcp://activemq:61616
+      ACTIVEMQ_USER: guest
+      ACTIVEMQ_PASSWORD: guest
+      EUREKA_CLIENT_ENABLED: "false"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      activemq:
+        condition: service_started
+    networks:
+      - gym-net
+
+networks:
+  gym-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  mongo-data:
